@@ -4,13 +4,15 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
-import androidx.annotation.MainThread
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
 import com.topjohnwu.superuser.nio.FileSystemManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArraySet
 
 class FileSystemService : RootService() {
+
     override fun onBind(intent: Intent): IBinder {
         return FileSystemManager.getService()
     }
@@ -21,10 +23,11 @@ class FileSystemService : RootService() {
     }
 
     companion object {
-        private sealed class Status {
-            data object Uninitialized : Status()
-            data object CheckRoot : Status()
-            data class ServiceAvailable(val fs: FileSystemManager) : Status()
+
+        private sealed interface Status {
+            data object Uninitialized : Status
+            data object CheckRoot : Status
+            data class ServiceAvailable(val fs: FileSystemManager) : Status
         }
 
         private var status: Status = Status.Uninitialized
@@ -41,14 +44,16 @@ class FileSystemService : RootService() {
             override fun onServiceDisconnected(p0: ComponentName) {
                 status = Status.Uninitialized
             }
-
         }
         private val pendingListeners = CopyOnWriteArraySet<Listener>()
 
-        @MainThread
-        fun start(listener: Listener) {
-            (status as? Status.ServiceAvailable)?.let {
-                listener.onServiceAvailable(it.fs)
+        private val isRoot
+            get() = Shell.Builder.create().build().use { it.isRoot }
+
+        suspend fun start(listener: Listener) {
+            if (status is Status.ServiceAvailable) {
+                val fs = (status as Status.ServiceAvailable).fs
+                listener.onServiceAvailable(fs)
                 return
             }
             pendingListeners.add(listener)
@@ -57,23 +62,18 @@ class FileSystemService : RootService() {
             }
         }
 
-        private fun checkRoot() {
+        private suspend fun checkRoot() {
             status = Status.CheckRoot
-            App.executor.submit {
-                val isRoot = Shell.Builder.create().setFlags(Shell.FLAG_MOUNT_MASTER).build().use {
-                    it.isRoot
+            if (isRoot) {
+                withContext(Dispatchers.Main) {
+                    launchService()
                 }
-                App.handler.post {
-                    if (isRoot) {
-                        launchService()
-                    } else {
-                        status = Status.Uninitialized
-                        pendingListeners.forEach { l ->
-                            l.onLaunchFailed()
-                            pendingListeners.remove(l)
-                        }
-                    }
+            } else {
+                status = Status.Uninitialized
+                pendingListeners.forEach { l ->
+                    l.onLaunchFailed()
                 }
+                pendingListeners.clear()
             }
         }
 

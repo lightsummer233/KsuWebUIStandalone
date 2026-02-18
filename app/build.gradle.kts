@@ -1,30 +1,25 @@
 @file:Suppress("UnstableApiUsage")
 
 import com.android.build.gradle.tasks.PackageAndroidArtifact
-import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 val keystorePropertiesFile: File = rootProject.file("keystore.properties")
-val keystoreProperties = if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
-    Properties().apply {
-        load(FileInputStream(keystorePropertiesFile))
-    }
-} else null
+val keystoreProperties = keystorePropertiesFile.takeIf { it.exists() && it.isFile }?.let {
+    Properties().apply { load(FileInputStream(it)) }
+}
 
-fun String.execute(currentWorkingDir: File = file("./")): String {
-    val byteOut = ByteArrayOutputStream()
-    project.exec {
-        workingDir = currentWorkingDir
-        commandLine = split("\\s".toRegex())
-        standardOutput = byteOut
-    }
-    return String(byteOut.toByteArray()).trim()
+fun String.execute(workingDir: File = file("./")): String {
+    val process = ProcessBuilder()
+        .command(split("\\s".toRegex()))
+        .directory(workingDir)
+        .start()
+    return process.inputStream.bufferedReader().use { it.readText().trim() }
 }
 
 val gitCommitCount = "git rev-list HEAD --count".execute().toInt()
@@ -50,7 +45,7 @@ android {
         targetSdk = 36
         versionCode = gitCommitCount
         versionName = "1.0"
-        setProperty("archivesBaseName", "KsuWebUI-$versionName-$versionCode")
+        base.archivesName = "KsuWebUI-$versionName-$versionCode"
     }
 
     buildTypes {
@@ -67,31 +62,29 @@ android {
                 signingConfigs["debug"]
             }
         }
+        debug {
+            applicationIdSuffix = ".debug"
+        }
     }
+
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
     }
-    // https://stackoverflow.com/a/77745844
-    tasks.withType<PackageAndroidArtifact> {
-        doFirst { appMetadata.asFile.orNull?.writeText("") }
-    }
+
     androidResources {
         generateLocaleConfig = true
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
-    kotlin {
-        jvmToolchain {
-            languageVersion.set(JavaLanguageVersion.of(21))
-        }
-    }
+
     buildFeatures {
         buildConfig = true
-        viewBinding = true
     }
+
     packaging {
         resources {
             excludes += "**"
@@ -99,14 +92,35 @@ android {
     }
 }
 
+// https://stackoverflow.com/a/77745844
+tasks.withType<PackageAndroidArtifact> {
+    doFirst { appMetadata.asFile.orNull?.writeText("") }
+}
+
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xexplicit-backing-fields",
+            "-Xreturn-value-checker=full"
+        )
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.activity.ktx)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.swiperefreshlayout)
-    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.webkit)
-    implementation(libs.material)
+
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.com.github.topjohnwu.libsu.core)
     implementation(libs.com.github.topjohnwu.libsu.service)

@@ -1,4 +1,5 @@
 <resources>
-    <!-- Base application theme. -->
-    <style name="Theme.KernelSU.WebUI" parent="Theme.KsuWebUI" />
+
+    <style name="Theme.KsuWebUI" parent="android:Theme.Material.NoActionBar" />
+
 </resources>

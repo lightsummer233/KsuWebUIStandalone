@@ -1,22 +1,21 @@
 package io.github.a13e300.ksuwebui
 
 import android.app.Application
-import android.os.Handler
-import android.os.Looper
+import android.content.SharedPreferences
 import com.topjohnwu.superuser.Shell
-import java.util.concurrent.Executors
 
 class App : Application() {
+
     companion object {
         lateinit var instance: App
             private set
-        val executor by lazy { Executors.newCachedThreadPool() }
-        val handler = Handler(Looper.getMainLooper())
+        val prefs: SharedPreferences by lazy { instance.getSharedPreferences("settings", MODE_PRIVATE) }
     }
 
     override fun onCreate() {
-        super.onCreate()
         instance = this
+        super.onCreate()
         Shell.setDefaultBuilder(Shell.Builder.create().setFlags(Shell.FLAG_MOUNT_MASTER))
+        Shell.enableVerboseLogging = BuildConfig.DEBUG
     }
 }
