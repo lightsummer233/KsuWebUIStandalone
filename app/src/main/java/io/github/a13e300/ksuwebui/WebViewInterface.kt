@@ -1,8 +1,10 @@
 package io.github.a13e300.ksuwebui
 
+import android.content.pm.ApplicationInfo
 import android.text.TextUtils
 import android.webkit.JavascriptInterface
 import androidx.compose.runtime.Stable
+import androidx.core.content.pm.PackageInfoCompat
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ShellUtils
@@ -140,7 +142,7 @@ class WebViewInterfaceImpl(
 
         completableFuture.thenAccept { result ->
             val emitExitCode =
-                "javascript: (function() { try { ${callbackFunc}.emit('exit', ${result.code}); } catch(e) { console.error(`emitExit error: \${e}`); } })();"
+                $$"javascript: (function() { try { $${callbackFunc}.emit('exit', $${result.code}); } catch(e) { console.error(`emitExit error: ${e}`); } })();"
 
             viewModel.sendEvent(WebViewEvent.LoadUrl(emitExitCode))
 
@@ -178,17 +180,61 @@ class WebViewInterfaceImpl(
 
     @JavascriptInterface
     override fun moduleInfo(): String {
-        TODO("Not yet implemented")
+        // TODO
+        return ""
     }
 
     @JavascriptInterface
     override fun listPackages(type: String): String {
-        TODO("Not yet implemented")
+        val packageNames = WebUIViewModel.packageInfos
+            .filter { packageInfo ->
+                val flags = packageInfo.applicationInfo?.flags ?: 0
+                when (type.lowercase()) {
+                    "system" -> (flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    "user" -> (flags and ApplicationInfo.FLAG_SYSTEM) == 0
+                    else -> true
+                }
+            }
+            .map { it.packageName }
+            .sorted()
+
+        val jsonArray = JSONArray()
+        for (packageName in packageNames) {
+            jsonArray.put(packageName)
+        }
+        return jsonArray.toString()
     }
 
     @JavascriptInterface
     override fun getPackagesInfo(packageNamesJson: String): String {
-        TODO("Not yet implemented")
+        val packageNames = JSONArray(packageNamesJson)
+        val jsonArray = JSONArray()
+
+        val pm = App.packageManager
+
+        val appMap = WebUIViewModel.packageInfos.associateBy { it.packageName }
+        for (i in 0 until packageNames.length()) {
+            val packageName = packageNames.getString(i)
+            val packageInfo = appMap[packageName]
+            if (packageInfo != null) {
+                val applicationInfo = packageInfo.applicationInfo
+
+                val obj = JSONObject()
+                obj.put("packageName", packageInfo.packageName)
+                obj.put("versionName", packageInfo.versionName ?: "")
+                obj.put("versionCode", PackageInfoCompat.getLongVersionCode(packageInfo))
+                obj.put("appLabel", applicationInfo?.loadLabel(pm) ?: JSONObject.NULL)
+                obj.put("isSystem", applicationInfo?.let { it.flags and ApplicationInfo.FLAG_SYSTEM != 0 } ?: JSONObject.NULL)
+                obj.put("uid", applicationInfo?.uid ?: JSONObject.NULL)
+                jsonArray.put(obj)
+            } else {
+                val obj = JSONObject()
+                obj.put("packageName", packageName)
+                obj.put("error", "Package not found or inaccessible")
+                jsonArray.put(obj)
+            }
+        }
+        return jsonArray.toString()
     }
 
     @JavascriptInterface

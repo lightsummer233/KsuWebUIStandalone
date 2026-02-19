@@ -46,14 +46,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainScreen() {
-    val viewModel: MainViewModel = viewModel()
+    val mainViewModel: MainViewModel = viewModel()
+    val webUIViewModel: WebUIViewModel = viewModel()
+
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-    val status by viewModel.status.collectAsState()
-    val moduleList by viewModel.moduleList.collectAsState()
+    val status by mainViewModel.status.collectAsState()
+    val moduleList by mainViewModel.moduleList.collectAsState()
 
     LaunchedEffect(Unit) {
-        viewModel.refreshModuleList()
+        mainViewModel.initialize()
+        webUIViewModel.initialize()
     }
 
     Scaffold(
@@ -75,6 +78,7 @@ fun MainScreen() {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .padding(innerPadding)
                             .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -86,6 +90,7 @@ fun MainScreen() {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .padding(innerPadding)
                             .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -101,6 +106,7 @@ fun MainScreen() {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .padding(innerPadding)
                             .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {

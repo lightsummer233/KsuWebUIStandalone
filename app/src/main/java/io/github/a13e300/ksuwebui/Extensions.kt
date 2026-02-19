@@ -1,16 +1,20 @@
 package io.github.a13e300.ksuwebui
 
 import android.content.res.Configuration
-import android.graphics.Color as AndroidColor
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.ColorScheme
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.core.graphics.createBitmap
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import android.graphics.Color as AndroidColor
 
 // enableEdgeToEdge() without enforcing contrast, magic based on androidx EdgeToEdge.kt
 fun ComponentActivity.enableEdgeToEdgeProperly() {
@@ -28,55 +32,6 @@ fun ComponentActivity.enableEdgeToEdgeProperly() {
         )
     }
 }
-
-val WindowInsets.css: String
-    @Composable get() {
-        val density = LocalDensity.current
-        val layoutDirection = LocalLayoutDirection.current
-
-        val top = this.getTop(density)
-        val right = this.getRight(density, layoutDirection)
-        val bottom = this.getBottom(density)
-        val left = this.getLeft(density, layoutDirection)
-
-        return buildString {
-            appendLine(":root {")
-            appendLine("\t--safe-area-inset-top: ${top}px;")
-            appendLine("\t--safe-area-inset-right: ${right}px;")
-            appendLine("\t--safe-area-inset-bottom: ${bottom}px;")
-            appendLine("\t--safe-area-inset-left: ${left}px;")
-            appendLine("\t--window-inset-top: var(--safe-area-inset-top, 0px);")
-            appendLine("\t--window-inset-bottom: var(--safe-area-inset-bottom, 0px);")
-            appendLine("\t--window-inset-left: var(--safe-area-inset-left, 0px);")
-            appendLine("\t--window-inset-right: var(--safe-area-inset-right, 0px);")
-            appendLine("\t--f7-safe-area-top: var(--window-inset-top, 0px) !important;")
-            appendLine("\t--f7-safe-area-bottom: var(--window-inset-bottom, 0px) !important;")
-            appendLine("\t--f7-safe-area-left: var(--window-inset-left, 0px) !important;")
-            appendLine("\t--f7-safe-area-right: var(--window-inset-right, 0px) !important;")
-            append("}")
-        }
-    }
-
-val WindowInsets.js: String
-    @Composable get() {
-        val density = LocalDensity.current
-        val layoutDirection = LocalLayoutDirection.current
-
-        val top = this.getTop(density)
-        val right = this.getRight(density, layoutDirection)
-        val bottom = this.getBottom(density)
-        val left = this.getLeft(density, layoutDirection)
-
-        return buildString {
-            append("(function() {")
-            append(" var s = document.documentElement.style;")
-            append(" s.setProperty('--safe-area-inset-top', '${top}px');")
-            append(" s.setProperty('--safe-area-inset-right', '${right}px');")
-            append(" s.setProperty('--safe-area-inset-bottom', '${bottom}px');")
-            append(" s.setProperty('--safe-area-inset-left', '${left}px');")
-            append("})();")
-        }
-    }
 
 private fun Float.toHex(): String {
     return (this * 255).toInt().coerceIn(0, 255).toString(16).padStart(2, '0')
@@ -141,3 +96,28 @@ val ColorScheme.css: String
             appendLine("}")
         }
     }
+
+fun Drawable.toBitmap(size: Int): Bitmap {
+    if (this is BitmapDrawable) return this.bitmap
+
+    val width = intrinsicWidth.takeIf { it > 0 } ?: size
+    val height = intrinsicHeight.takeIf { it > 0 } ?: size
+
+    return createBitmap(width, height).apply {
+        val canvas = Canvas(this)
+        setBounds(0, 0, canvas.width, canvas.height)
+        draw(canvas)
+    }
+}
+
+fun Window.hideSystemUI() {
+    WindowInsetsControllerCompat(this, decorView).let { controller ->
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+}
+
+fun Window.showSystemUI() {
+    WindowInsetsControllerCompat(this, decorView).show(WindowInsetsCompat.Type.systemBars())
+}

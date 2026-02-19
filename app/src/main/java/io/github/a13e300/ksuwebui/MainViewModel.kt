@@ -16,7 +16,7 @@ class MainViewModel : ViewModel(), FileSystemService.Listener {
     sealed interface Status {
         data object Loading : Status
         data object NoRoot : Status
-        data object NoModule: Status
+        data object NoModule : Status
         data object Ready : Status
     }
 
@@ -35,14 +35,14 @@ class MainViewModel : ViewModel(), FileSystemService.Listener {
     val moduleList: StateFlow<List<Module>>
         field = MutableStateFlow(listOf())
 
-    fun refreshModuleList() {
-        viewModelScope.launch {
+    fun initialize() {
+        viewModelScope.launch(Dispatchers.IO) {
             FileSystemService.start(this@MainViewModel)
         }
     }
 
     private suspend fun refreshModuleList(fs: FileSystemManager) = withContext(Dispatchers.IO) {
-        val modules = mutableListOf<Module>()
+        val newModuleList = mutableListOf<Module>()
         val showDisabled = App.prefs.getBoolean("show_disabled", false)
         fs.getFile("/data/adb/modules").listFiles()!!.forEach { f ->
             if (!f.isDirectory) return@forEach
@@ -66,10 +66,11 @@ class MainViewModel : ViewModel(), FileSystemService.Listener {
                     }
                 }
             }
-            modules.add(Module(name, id, desc, author, version))
+            newModuleList.add(Module(name, id, desc, author, version))
         }
-        moduleList.emit(modules)
-        if (modules.isEmpty()) {
+        moduleList.emit(newModuleList)
+        modules = newModuleList
+        if (newModuleList.isEmpty()) {
             status.emit(Status.NoModule)
         } else {
             status.emit(Status.Ready)
@@ -91,5 +92,10 @@ class MainViewModel : ViewModel(), FileSystemService.Listener {
     override fun onCleared() {
         FileSystemService.removeListener(this)
         super.onCleared()
+    }
+
+    companion object {
+        var modules: List<Module> = listOf()
+            private set
     }
 }

@@ -10,9 +10,11 @@ import androidx.webkit.WebViewAssetLoader;
 
 import com.topjohnwu.superuser.nio.FileSystemManager;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -36,13 +38,11 @@ import java.util.zip.GZIPInputStream;
  * </pre>
  */
 public final class RemoteFsPathHandler implements WebViewAssetLoader.PathHandler {
-    private static final String TAG = "FsServicePathHandler";
-
     /**
      * Default value to be used as MIME type if guessing MIME type failed.
      */
     public static final String DEFAULT_MIME_TYPE = "text/plain";
-
+    private static final String TAG = "RemoteFsPathHandler";
     /**
      * Forbidden subdirectories of {@link Context#getDataDir} that cannot be exposed by this
      * handler. They are forbidden as they often contain sensitive information.
@@ -50,12 +50,15 @@ public final class RemoteFsPathHandler implements WebViewAssetLoader.PathHandler
      * Note: Any future addition to this list will be considered breaking changes to the API.
      */
     private static final String[] FORBIDDEN_DATA_DIRS =
-            new String[] {"/data/data", "/data/system"};
+            new String[]{"/data/data", "/data/system"};
 
     @NonNull
     private final File mDirectory;
 
     private final FileSystemManager mFs;
+    private final InsetsCssSupplier mInsetsCssSupplier;
+    private final OnInsetsRequestedListener mOnInsetsRequestedListener;
+    private final MonetColorCssSupplier mMonetColorCssSupplier;
 
     /**
      * Creates PathHandler for app's internal storage.
@@ -78,8 +81,17 @@ public final class RemoteFsPathHandler implements WebViewAssetLoader.PathHandler
      *                  which files can be loaded.
      * @throws IllegalArgumentException if the directory is not allowed.
      */
-    public RemoteFsPathHandler(@NonNull File directory, FileSystemManager fs) {
+    public RemoteFsPathHandler(
+            @NonNull File directory,
+            FileSystemManager fs,
+            @NonNull InsetsCssSupplier insetsCssSupplier,
+            @NonNull OnInsetsRequestedListener onInsetsRequestedListener,
+            @NonNull MonetColorCssSupplier monetColorCssSupplier
+    ) {
         try {
+            mInsetsCssSupplier = insetsCssSupplier;
+            mOnInsetsRequestedListener = onInsetsRequestedListener;
+            mMonetColorCssSupplier = monetColorCssSupplier;
             mDirectory = new File(getCanonicalDirPath(directory));
             if (!isAllowedInternalStorageDir()) {
                 throw new IllegalArgumentException("The given directory \"" + directory
@@ -91,57 +103,6 @@ public final class RemoteFsPathHandler implements WebViewAssetLoader.PathHandler
                     "Failed to resolve the canonical path for the given directory: "
                             + directory.getPath(), e);
         }
-    }
-
-    private boolean isAllowedInternalStorageDir() throws IOException {
-        String dir = getCanonicalDirPath(mDirectory);
-
-        for (String forbiddenPath : FORBIDDEN_DATA_DIRS) {
-            if (dir.startsWith(forbiddenPath)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Opens the requested file from the exposed data directory.
-     * <p>
-     * The matched prefix path used shouldn't be a prefix of a real web path. Thus, if the
-     * requested file cannot be found or is outside the mounted directory a
-     * {@link WebResourceResponse} object with a {@code null} {@link InputStream} will be
-     * returned instead of {@code null}. This saves the time of falling back to network and
-     * trying to resolve a path that doesn't exist. A {@link WebResourceResponse} with
-     * {@code null} {@link InputStream} will be received as an HTTP response with status code
-     * {@code 404} and no body.
-     * <p class="note">
-     * The MIME type for the file will be determined from the file's extension using
-     * {@link java.net.URLConnection#guessContentTypeFromName}. Developers should ensure that
-     * files are named using standard file extensions. If the file does not have a
-     * recognised extension, {@code "text/plain"} will be used by default.
-     *
-     * @param path the suffix path to be handled.
-     * @return {@link WebResourceResponse} for the requested file.
-     */
-    @Override
-    @WorkerThread
-    @NonNull
-    public WebResourceResponse handle(@NonNull String path) {
-        try {
-            File file = getCanonicalFileIfChild(mDirectory, path);
-            if (file != null) {
-                InputStream is = openFile(file, mFs);
-                String mimeType = guessMimeType(path);
-                return new WebResourceResponse(mimeType, null, is);
-            } else {
-                Log.e(TAG, String.format(
-                        "The requested file: %s is outside the mounted directory: %s", path,
-                        mDirectory));
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Error opening the requested path: " + path, e);
-        }
-        return new WebResourceResponse(null, null, null);
     }
 
     public static String getCanonicalDirPath(@NonNull File file) throws IOException {
@@ -181,5 +142,88 @@ public final class RemoteFsPathHandler implements WebViewAssetLoader.PathHandler
     public static String guessMimeType(@NonNull String filePath) {
         String mimeType = MimeUtil.getMimeFromFileName(filePath);
         return mimeType == null ? DEFAULT_MIME_TYPE : mimeType;
+    }
+
+    private boolean isAllowedInternalStorageDir() throws IOException {
+        String dir = getCanonicalDirPath(mDirectory);
+
+        for (String forbiddenPath : FORBIDDEN_DATA_DIRS) {
+            if (dir.startsWith(forbiddenPath)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Opens the requested file from the exposed data directory.
+     * <p>
+     * The matched prefix path used shouldn't be a prefix of a real web path. Thus, if the
+     * requested file cannot be found or is outside the mounted directory a
+     * {@link WebResourceResponse} object with a {@code null} {@link InputStream} will be
+     * returned instead of {@code null}. This saves the time of falling back to network and
+     * trying to resolve a path that doesn't exist. A {@link WebResourceResponse} with
+     * {@code null} {@link InputStream} will be received as an HTTP response with status code
+     * {@code 404} and no body.
+     * <p class="note">
+     * The MIME type for the file will be determined from the file's extension using
+     * {@link java.net.URLConnection#guessContentTypeFromName}. Developers should ensure that
+     * files are named using standard file extensions. If the file does not have a
+     * recognised extension, {@code "text/plain"} will be used by default.
+     *
+     * @param path the suffix path to be handled.
+     * @return {@link WebResourceResponse} for the requested file.
+     */
+    @Override
+    @WorkerThread
+    @NonNull
+    public WebResourceResponse handle(@NonNull String path) {
+        if ("internal/insets.css".equals(path)) {
+            mOnInsetsRequestedListener.onInsetsRequested(true);
+            String css = mInsetsCssSupplier.get();
+            Log.d(TAG, "Providing insets CSS: " + css);
+            return new WebResourceResponse(
+                    "text/css",
+                    "utf-8",
+                    new ByteArrayInputStream(css.getBytes(StandardCharsets.UTF_8))
+            );
+        }
+        if ("internal/colors.css".equals(path)) {
+            String css = mMonetColorCssSupplier.get();
+            return new WebResourceResponse(
+                    "text/css",
+                    "utf-8",
+                    new ByteArrayInputStream(css.getBytes(StandardCharsets.UTF_8))
+            );
+        }
+        try {
+            File file = getCanonicalFileIfChild(mDirectory, path);
+            if (file != null) {
+                InputStream is = openFile(file, mFs);
+                String mimeType = guessMimeType(path);
+                return new WebResourceResponse(mimeType, null, is);
+            } else {
+                Log.e(TAG, String.format(
+                        "The requested file: %s is outside the mounted directory: %s", path,
+                        mDirectory));
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error opening the requested path: " + path, e);
+        }
+        return new WebResourceResponse(null, null, null);
+    }
+
+    public interface InsetsCssSupplier {
+        @NonNull
+        String get();
+    }
+
+    public interface OnInsetsRequestedListener {
+        void onInsetsRequested(boolean enable);
+    }
+
+    public interface MonetColorCssSupplier {
+        @NonNull
+        String get();
     }
 }
