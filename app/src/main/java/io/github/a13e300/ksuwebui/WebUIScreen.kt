@@ -69,6 +69,10 @@ fun WebUIScreen(
 
     val isInsetsEnabled by webUIViewModel.isInsetsEnabled.collectAsState()
 
+    val windowInsets by remember {
+        derivedStateOf { if (isInsetsEnabled) WindowInsets() else safeDrawingInsets }
+    }
+
     LaunchedEffect(density, layoutDirection, safeDrawingInsets, isInsetsEnabled) {
         if (!isInsetsEnabled) return@LaunchedEffect
         snapshotFlow {
@@ -80,8 +84,8 @@ fun WebUIScreen(
                 (safeDrawingInsets.getRight(density, layoutDirection) / density.density).toInt()
             Insets(top, bottom, left, right)
         }.collect { newInsets ->
-            if (WebUIViewModel.insets != newInsets) {
-                WebUIViewModel.insets = newInsets
+            if (WebUIActivity.insets != newInsets) {
+                WebUIActivity.insets = newInsets
                 webView.await().get()?.let {
                     it.post { it.evaluateJavascript(newInsets.js, null) }
                 }
@@ -89,14 +93,10 @@ fun WebUIScreen(
         }
     }
 
-    val windowInsets by remember {
-        derivedStateOf { if (isInsetsEnabled) WindowInsets() else safeDrawingInsets }
-    }
-
     LaunchedEffect(Unit) {
         webUIViewModel.event.collectLatest { event ->
             when (event) {
-                is WebViewEvent.LoadUrl -> {
+                is WebViewEvent.EvaluateJavascript -> {
                     webView.await().get()?.let {
                         it.post { it.evaluateJavascript(event.jsCode, null) }
                     }
@@ -130,7 +130,7 @@ fun WebUIScreen(
     val colorScheme = MaterialTheme.colorScheme
 
     LaunchedEffect(colorScheme) {
-        WebUIViewModel.colorScheme = colorScheme
+        WebUIActivity.colorScheme = colorScheme
     }
 
     val webCanGoBack by webUIViewModel.canGoBack.collectAsState()
@@ -177,7 +177,6 @@ fun WebUIScreen(
 
             is WebUIViewModel.Status.Ready -> {
                 WebViewWrapper(
-                    key = moduleId,
                     windowInsets = windowInsets,
                     factory = {
                         webUIViewModel.initializeWebView(this, moduleId)

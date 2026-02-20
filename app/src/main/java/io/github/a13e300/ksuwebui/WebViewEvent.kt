@@ -8,7 +8,7 @@ import androidx.compose.runtime.Immutable
 @Immutable
 sealed interface WebViewEvent {
 
-    data class LoadUrl(val jsCode: String) : WebViewEvent
+    data class EvaluateJavascript(val jsCode: String) : WebViewEvent
 
     data class Toast(val message: String) : WebViewEvent
 

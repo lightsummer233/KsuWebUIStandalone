@@ -16,8 +16,6 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.collection.LruCache
-import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.core.graphics.scale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -173,9 +171,9 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
                 "/",
                 RemoteFsPathHandler(
                     webRoot, fs.get()!!,
-                    { insets.css },
+                    { WebUIActivity.insets.css },
                     { enableInsets(it) },
-                    { colorScheme.css }
+                    { WebUIActivity.colorScheme.css }
                 )
             )
             .build()
@@ -211,7 +209,7 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                 updateCanGoBack(view?.canGoBack() ?: false)
                 if (isInsetsEnabled.value) {
-                    view?.evaluateJavascript(insets.js, null)
+                    view?.evaluateJavascript(WebUIActivity.insets.js, null)
                 }
                 super.doUpdateVisitedHistory(view, url, isReload)
             }
@@ -295,9 +293,6 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
     }
 
     companion object {
-        var insets: Insets = Insets(0, 0, 0, 0)
-        var colorScheme: ColorScheme = lightColorScheme()
-
         var packageInfos: List<PackageInfo> = listOf()
             private set
     }

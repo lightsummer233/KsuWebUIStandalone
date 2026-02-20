@@ -78,13 +78,11 @@ class WebViewInterfaceImpl(
         val stderr = result.err.joinToString(separator = "\n")
 
         val jsCode =
-            "javascript: (function() { try { ${callbackFunc}(${result.code}, ${
-                JSONObject.quote(
-                    stdout
-                )
-            }, ${JSONObject.quote(stderr)}); } catch(e) { console.error(e); } })();"
+            "(function() { try { ${callbackFunc}(${result.code}, ${JSONObject.quote(stdout)}, ${
+                JSONObject.quote(stderr)
+            }); } catch(e) { console.error(e); } })();"
 
-        viewModel.sendEvent(WebViewEvent.LoadUrl(jsCode))
+        viewModel.sendEvent(WebViewEvent.EvaluateJavascript(jsCode))
     }
 
     @JavascriptInterface
@@ -114,13 +112,9 @@ class WebViewInterfaceImpl(
 
         val emitData = fun(name: String, data: String) {
             val jsCode =
-                "javascript: (function() { try { ${callbackFunc}.${name}.emit('data', ${
-                    JSONObject.quote(
-                        data
-                    )
-                }); } catch(e) { console.error('emitData', e); } })();"
+                "(function() { try { ${callbackFunc}.${name}.emit('data', ${JSONObject.quote(data)}); } catch(e) { console.error('emitData', e); } })();"
 
-            viewModel.sendEvent(WebViewEvent.LoadUrl(jsCode))
+            viewModel.sendEvent(WebViewEvent.EvaluateJavascript(jsCode))
         }
 
         val stdout = object : CallbackList<String>(UiThreadHandler::runAndWait) {
@@ -142,21 +136,17 @@ class WebViewInterfaceImpl(
 
         completableFuture.thenAccept { result ->
             val emitExitCode =
-                $$"javascript: (function() { try { $${callbackFunc}.emit('exit', $${result.code}); } catch(e) { console.error(`emitExit error: ${e}`); } })();"
+                $$"(function() { try { $${callbackFunc}.emit('exit', $${result.code}); } catch(e) { console.error(`emitExit error: ${e}`); } })();"
 
-            viewModel.sendEvent(WebViewEvent.LoadUrl(emitExitCode))
+            viewModel.sendEvent(WebViewEvent.EvaluateJavascript(emitExitCode))
 
             if (result.code != 0) {
                 val emitErrCode =
-                    "javascript: (function() { try { var err = new Error(); err.exitCode = ${result.code}; err.message = ${
-                        JSONObject.quote(
-                            result.err.joinToString(
-                                "\n"
-                            )
-                        )
+                    "(function() { try { var err = new Error(); err.exitCode = ${result.code}; err.message = ${
+                        JSONObject.quote(result.err.joinToString("\n"))
                     };${callbackFunc}.emit('error', err); } catch(e) { console.error('emitErr', e); } })();"
 
-                viewModel.sendEvent(WebViewEvent.LoadUrl(emitErrCode))
+                viewModel.sendEvent(WebViewEvent.EvaluateJavascript(emitErrCode))
             }
         }.whenComplete { _, _ ->
             val _ = runCatching { shell.close() }
