@@ -181,7 +181,6 @@ public final class RemoteFsPathHandler implements WebViewAssetLoader.PathHandler
         if ("internal/insets.css".equals(path)) {
             mOnInsetsRequestedListener.onInsetsRequested(true);
             String css = mInsetsCssSupplier.get();
-            Log.d(TAG, "Providing insets CSS: " + css);
             return new WebResourceResponse(
                     "text/css",
                     "utf-8",

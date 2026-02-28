@@ -16,6 +16,9 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.collection.LruCache
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Immutable
 import androidx.core.graphics.scale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +28,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -37,33 +44,106 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
 
     sealed interface Status {
         data object Loading : Status
-        data object NoRoot : Status
+        data object Updating : Status
+        data object Unavailable : Status
         data object Ready : Status
     }
 
-    val status: StateFlow<Status>
+    val moduleListStatus: StateFlow<Status>
         field = MutableStateFlow<Status>(Status.Loading)
 
-    fun initialize() {
-        viewModelScope.launch(Dispatchers.IO) {
-            FileSystemService.start(this@WebUIViewModel)
+    val packageInfoListStatus: StateFlow<Status>
+        field = MutableStateFlow<Status>(Status.Loading)
+
+    val fsStatus: StateFlow<Status>
+        field = MutableStateFlow<Status>(Status.Loading)
+
+    val colorSchemeStatus: StateFlow<Status>
+        field = MutableStateFlow<Status>(Status.Loading)
+
+    val status: StateFlow<Status> = combine(
+        moduleListStatus,
+        packageInfoListStatus,
+        fsStatus,
+        colorSchemeStatus
+    ) { moduleStatus, packageStatus, fsStatus, colorSchemeStatus ->
+        if (fsStatus == Status.Unavailable || moduleStatus == Status.Unavailable || packageStatus == Status.Unavailable) {
+            Status.Unavailable
+        } else if (moduleStatus == Status.Loading || packageStatus == Status.Loading || fsStatus == Status.Loading || colorSchemeStatus == Status.Loading) {
+            Status.Loading
+        } else {
+            Status.Ready
         }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Status.Loading)
+
+    fun initialize() {
+        viewModelScope.launch {
+            FileSystemService.start(this@WebUIViewModel)
+            refreshPackageInfoList()
+        }
+    }
+
+    @Immutable
+    data class Module(
+        val name: String,
+        val id: String,
+        val desc: String,
+        val author: String,
+        val version: String
+    )
+
+    val moduleList: StateFlow<List<Module>>
+        field = MutableStateFlow(listOf())
+
+    private fun refreshModuleListWithStatus(
+        fs: FileSystemManager? = this.fs.get()
+    ) {
+        fs ?: return
+        viewModelScope.launch {
+            moduleListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
+            refreshModuleList(fs)
+            moduleListStatus.emit(Status.Ready)
+        }
+    }
+
+    private suspend fun refreshModuleList(fs: FileSystemManager) = withContext(Dispatchers.IO) {
+        val newModuleList = mutableListOf<Module>()
+        val showDisabled = App.prefs.getBoolean("show_disabled", false)
+        fs.getFile("/data/adb/modules").listFiles()!!.forEach { f ->
+            if (!f.isDirectory) return@forEach
+            if (!fs.getFile(f, "webroot").isDirectory) return@forEach
+            if (fs.getFile(f, "disable").exists() && !showDisabled) return@forEach
+            var name = f.name
+            val id = f.name
+            var author = "?"
+            var version = "?"
+            var desc = ""
+            fs.getFile(f, "module.prop").newInputStream().bufferedReader().use {
+                it.lines().forEach { line ->
+                    val ls = line.split("=", limit = 2)
+                    if (ls.size == 2) {
+                        when (ls[0]) {
+                            "name" -> name = ls[1]
+                            "description" -> desc = ls[1]
+                            "author" -> author = ls[1]
+                            "version" -> version = ls[1]
+                        }
+                    }
+                }
+            }
+            newModuleList.add(Module(name, id, desc, author, version))
+        }
+        moduleList.emit(newModuleList)
     }
 
     val packageInfoList: StateFlow<List<PackageInfo>>
         field = MutableStateFlow(listOf())
 
-    val packageInfoListLoaded: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-
-    suspend fun refreshPackageInfoList() {
-        if (packageInfoListLoaded.value) {
-            viewModelScope.launch(Dispatchers.IO) {
-                refreshPackageInfoList(flags = 0)
-            }
-        } else {
+    private fun refreshPackageInfoList() {
+        viewModelScope.launch {
+            packageInfoListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
             refreshPackageInfoList(flags = 0)
-            packageInfoListLoaded.emit(true)
+            packageInfoListStatus.emit(Status.Ready)
         }
     }
 
@@ -84,9 +164,13 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
 
     private val iconCache = LruCache<String, Bitmap>(200)
 
-    fun loadAppIcon(packageManager: PackageManager, packageName: String, sizePx: Int): Bitmap? {
-        val cached = iconCache[packageName]
-        if (cached != null) return cached
+    private fun loadAppIcon(
+        packageManager: PackageManager,
+        packageName: String,
+        sizePx: Int
+    ): Bitmap? {
+        val cachedIcon = iconCache[packageName]
+        if (cachedIcon != null) return cachedIcon
 
         try {
             val packageInfo = packageInfoList.value.find { it.packageName == packageName }
@@ -102,11 +186,35 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
         }
     }
 
-    val isInsetsEnabled: StateFlow<Boolean>
-        field = MutableStateFlow(false)
+    var fs: WeakReference<FileSystemManager> = WeakReference(null)
 
-    fun enableInsets(enabled: Boolean) {
-        isInsetsEnabled.tryEmit(enabled)
+    override fun onServiceAvailable(fs: FileSystemManager) {
+        this.fs = WeakReference(fs)
+        viewModelScope.launch {
+            fsStatus.emit(Status.Ready)
+            refreshModuleListWithStatus(fs)
+        }
+    }
+
+    override fun onLaunchFailed() {
+        viewModelScope.launch {
+            fsStatus.emit(Status.Unavailable)
+            moduleListStatus.emit(Status.Unavailable)
+        }
+    }
+
+    override fun onCleared() {
+        FileSystemService.removeListener(this)
+        super.onCleared()
+    }
+
+    fun updateInsets(insets: Insets) {
+        Companion.insets = insets
+    }
+
+    fun updateColorScheme(colorScheme: ColorScheme) {
+        Companion.colorScheme = colorScheme
+        colorSchemeStatus.tryEmit(Status.Ready)
     }
 
     val event: SharedFlow<WebViewEvent>
@@ -118,6 +226,13 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
         }
     }
 
+    val isInsetsEnabled: StateFlow<Boolean>
+        field = MutableStateFlow(false)
+
+    fun enableInsets(enabled: Boolean) {
+        isInsetsEnabled.tryEmit(enabled)
+    }
+
     val filePathCallback: StateFlow<ValueCallback<Array<Uri>>?>
         field = MutableStateFlow<ValueCallback<Array<Uri>>?>(null)
 
@@ -126,32 +241,11 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
         filePathCallback.tryEmit(callback)
     }
 
-    val canGoBack: StateFlow<Boolean>
+    val webCanGoBack: StateFlow<Boolean>
         field = MutableStateFlow(false)
 
-    fun updateCanGoBack(canGoBack: Boolean) {
-        this.canGoBack.tryEmit(canGoBack)
-    }
-
-    var fs: WeakReference<FileSystemManager> = WeakReference(null)
-
-    override fun onServiceAvailable(fs: FileSystemManager) {
-        this.fs = WeakReference(fs)
-        viewModelScope.launch(Dispatchers.IO) {
-            refreshPackageInfoList()
-            status.emit(Status.Ready)
-        }
-    }
-
-    override fun onLaunchFailed() {
-        viewModelScope.launch {
-            status.emit(Status.NoRoot)
-        }
-    }
-
-    override fun onCleared() {
-        FileSystemService.removeListener(this)
-        super.onCleared()
+    fun updateWebCanGoBack(canGoBack: Boolean) {
+        webCanGoBack.tryEmit(canGoBack)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -171,9 +265,9 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
                 "/",
                 RemoteFsPathHandler(
                     webRoot, fs.get()!!,
-                    { WebUIActivity.insets.css },
+                    { insets.css },
                     { enableInsets(it) },
-                    { WebUIActivity.colorScheme.css }
+                    { colorScheme.css }
                 )
             )
             .build()
@@ -207,9 +301,9 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
-                updateCanGoBack(view?.canGoBack() ?: false)
+                updateWebCanGoBack(view?.canGoBack() ?: false)
                 if (isInsetsEnabled.value) {
-                    view?.evaluateJavascript(WebUIActivity.insets.js, null)
+                    view?.evaluateJavascript(insets.js, null)
                 }
                 super.doUpdateVisitedHistory(view, url, isReload)
             }
@@ -294,6 +388,10 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
 
     companion object {
         var packageInfos: List<PackageInfo> = listOf()
+            private set
+        var insets: Insets = Insets(0, 0, 0, 0)
+            private set
+        var colorScheme: ColorScheme = lightColorScheme()
             private set
     }
 }

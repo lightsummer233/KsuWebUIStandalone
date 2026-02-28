@@ -5,7 +5,7 @@ core = "1.17.0"
 activity = "1.12.4"
 lifecycle = "2.10.0"
 webkit = "1.15.0"
-compose-bom = "2026.02.00"
+compose-bom = "2026.02.01"
 libsu = "6.0.0"
 
 [libraries]

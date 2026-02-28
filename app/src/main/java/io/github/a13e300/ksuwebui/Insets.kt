@@ -1,5 +1,7 @@
 package io.github.a13e300.ksuwebui
 
+import androidx.compose.runtime.Immutable
+
 /**
  * Insets data class from GitHub@MMRLApp/WebUI-X-Portable
  *
@@ -14,6 +16,7 @@ package io.github.a13e300.ksuwebui
  * @property left The left inset value in pixels.
  * @property right The right inset value in pixels.
  */
+@Immutable
 data class Insets(
     val top: Int,
     val bottom: Int,

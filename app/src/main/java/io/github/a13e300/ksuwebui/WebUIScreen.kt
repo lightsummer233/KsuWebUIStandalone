@@ -12,9 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,15 +45,9 @@ import java.lang.ref.WeakReference
 fun WebUIScreen(
     moduleId: String
 ) {
-    val mainViewModel: MainViewModel = viewModel()
-    val webUIViewModel: WebUIViewModel = viewModel()
+    val viewModel: WebUIViewModel = viewModel(viewModelStoreOwner = App.instance)
 
-    val status by webUIViewModel.status.collectAsState()
-
-    LaunchedEffect(Unit) {
-        mainViewModel.initialize()
-        webUIViewModel.initialize()
-    }
+    val status by viewModel.status.collectAsState()
 
     val context = LocalContext.current
     val activity = LocalActivity.current
@@ -65,9 +60,11 @@ fun WebUIScreen(
         CompletableDeferred()
     }
 
-    val safeDrawingInsets = WindowInsets.safeDrawing
+    // Handle insets
 
-    val isInsetsEnabled by webUIViewModel.isInsetsEnabled.collectAsState()
+    val isInsetsEnabled by viewModel.isInsetsEnabled.collectAsState()
+
+    val safeDrawingInsets = WindowInsets.safeDrawing
 
     val windowInsets by remember {
         derivedStateOf { if (isInsetsEnabled) WindowInsets() else safeDrawingInsets }
@@ -84,8 +81,8 @@ fun WebUIScreen(
                 (safeDrawingInsets.getRight(density, layoutDirection) / density.density).toInt()
             Insets(top, bottom, left, right)
         }.collect { newInsets ->
-            if (WebUIActivity.insets != newInsets) {
-                WebUIActivity.insets = newInsets
+            if (WebUIViewModel.insets != newInsets) {
+                viewModel.updateInsets(newInsets)
                 webView.await().get()?.let {
                     it.post { it.evaluateJavascript(newInsets.js, null) }
                 }
@@ -93,8 +90,10 @@ fun WebUIScreen(
         }
     }
 
+    // Handle webview events
+
     LaunchedEffect(Unit) {
-        webUIViewModel.event.collectLatest { event ->
+        viewModel.event.collectLatest { event ->
             when (event) {
                 is WebViewEvent.EvaluateJavascript -> {
                     webView.await().get()?.let {
@@ -115,7 +114,7 @@ fun WebUIScreen(
                 }
 
                 is WebViewEvent.EdgeToEdge -> {
-                    webUIViewModel.enableInsets(event.enable)
+                    viewModel.enableInsets(event.enable)
                 }
 
                 is WebViewEvent.Exit -> {
@@ -127,13 +126,9 @@ fun WebUIScreen(
         }
     }
 
-    val colorScheme = MaterialTheme.colorScheme
+    // Handle back press
 
-    LaunchedEffect(colorScheme) {
-        WebUIActivity.colorScheme = colorScheme
-    }
-
-    val webCanGoBack by webUIViewModel.canGoBack.collectAsState()
+    val webCanGoBack by viewModel.webCanGoBack.collectAsState()
 
     BackHandler(enabled = webCanGoBack) {
         scope.launch(Dispatchers.IO) {
@@ -143,46 +138,48 @@ fun WebUIScreen(
         }
     }
 
-    Crossfade(
-        targetState = status
-    ) { status ->
-        when (status) {
-            WebUIViewModel.Status.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .windowInsetsPadding(safeDrawingInsets)
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    LoadingIndicator()
+    Surface {
+        Crossfade(
+            targetState = status
+        ) { status ->
+            when (status) {
+                WebUIViewModel.Status.Loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(safeDrawingInsets)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
-            }
 
-            WebUIViewModel.Status.NoRoot -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .windowInsetsPadding(safeDrawingInsets)
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.please_grant_root),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 16.sp
+                WebUIViewModel.Status.Unavailable -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(safeDrawingInsets)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.please_grant_root),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+
+                is WebUIViewModel.Status.Ready, WebUIViewModel.Status.Updating -> {
+                    WebViewWrapper(
+                        windowInsets = windowInsets,
+                        factory = {
+                            viewModel.initializeWebView(this, moduleId)
+                            webView.complete(WeakReference(this))
+                        }
                     )
                 }
-            }
-
-            is WebUIViewModel.Status.Ready -> {
-                WebViewWrapper(
-                    windowInsets = windowInsets,
-                    factory = {
-                        webUIViewModel.initializeWebView(this, moduleId)
-                        webView.complete(WeakReference(this))
-                    }
-                )
             }
         }
     }

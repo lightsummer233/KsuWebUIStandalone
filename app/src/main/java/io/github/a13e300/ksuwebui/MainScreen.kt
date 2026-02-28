@@ -5,7 +5,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -14,24 +13,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.plus
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -46,35 +45,29 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainScreen() {
-    val mainViewModel: MainViewModel = viewModel()
-    val webUIViewModel: WebUIViewModel = viewModel()
+    val viewModel: WebUIViewModel = viewModel(viewModelStoreOwner = App.instance)
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-    val status by mainViewModel.status.collectAsState()
-    val moduleList by mainViewModel.moduleList.collectAsState()
-
-    LaunchedEffect(Unit) {
-        mainViewModel.initialize()
-        webUIViewModel.initialize()
-    }
+    val status by viewModel.moduleListStatus.collectAsState()
+    val moduleList by viewModel.moduleList.collectAsState()
+    val moduleListIsEmpty by remember { derivedStateOf { moduleList.isEmpty() } }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(R.string.app_name)) },
-                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                windowInsets = WindowInsets.safeDrawing.only(sides = WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
                 scrollBehavior = scrollBehavior
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
-
         Crossfade(
             targetState = status
         ) {
-            when (it) {
-                is MainViewModel.Status.Loading -> {
+            when {
+                it is WebUIViewModel.Status.Loading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -82,11 +75,11 @@ fun MainScreen() {
                             .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        LoadingIndicator()
+                        CircularProgressIndicator()
                     }
                 }
 
-                is MainViewModel.Status.NoRoot -> {
+                it is WebUIViewModel.Status.Unavailable -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -102,7 +95,7 @@ fun MainScreen() {
                     }
                 }
 
-                is MainViewModel.Status.NoModule -> {
+                (it is WebUIViewModel.Status.Ready || it is WebUIViewModel.Status.Updating) && moduleListIsEmpty -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -118,14 +111,19 @@ fun MainScreen() {
                     }
                 }
 
-                is MainViewModel.Status.Ready -> {
+                it is WebUIViewModel.Status.Ready || it is WebUIViewModel.Status.Updating -> {
                     LazyColumn(
                         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-                        contentPadding = innerPadding + PaddingValues(all = 16.dp)
+                        contentPadding = innerPadding
                     ) {
                         items(moduleList) { module ->
-                            ModuleCard(module = module, modifier = Modifier.animateItem())
-                            Spacer(modifier = Modifier.height(16.dp).animateItem())
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                ModuleCard(module = module, modifier = Modifier.animateItem())
+                            }
                         }
                     }
                 }
@@ -136,7 +134,7 @@ fun MainScreen() {
 
 @Composable
 fun ModuleCard(
-    module: MainViewModel.Module,
+    module: WebUIViewModel.Module,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -189,7 +187,7 @@ fun ModuleCard(
 @Composable
 private fun ModuleCardPreview() {
     ModuleCard(
-        module = MainViewModel.Module(
+        module = WebUIViewModel.Module(
             name = "Example Module",
             id = "example_module",
             desc = "This is an example module used for previewing the ModuleCard composable in Jetpack Compose. It demonstrates how the module information will be displayed in the UI.",
