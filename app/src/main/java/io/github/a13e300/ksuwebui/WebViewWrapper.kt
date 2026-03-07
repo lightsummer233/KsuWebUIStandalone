@@ -15,7 +15,8 @@ import androidx.compose.ui.viewinterop.NoOpUpdate
 fun WebViewWrapper(
     windowInsets: WindowInsets,
     factory: WebView.() -> Unit,
-    update: WebView.() -> Unit = NoOpUpdate
+    update: WebView.() -> Unit = NoOpUpdate,
+    onRelease: WebView.() -> Unit = NoOpUpdate
 ) {
     Box(
         modifier = Modifier.windowInsetsPadding(windowInsets)
@@ -31,7 +32,8 @@ fun WebViewWrapper(
                 }
             },
             modifier = Modifier.fillMaxSize(),
-            update = update
+            update = update,
+            onRelease = onRelease
         )
     }
 }

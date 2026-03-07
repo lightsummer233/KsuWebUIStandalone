@@ -1,7 +1,5 @@
 package io.github.a13e300.ksuwebui
 
-import android.app.ActivityManager
-import android.os.Build
 import android.os.Bundle
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
@@ -18,16 +16,9 @@ class WebUIActivity : ComponentActivity() {
             return
         }
         val moduleName: String = intent.getStringExtra("name") ?: moduleId
+
         if (moduleName.isNotEmpty()) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                @Suppress("DEPRECATION")
-                setTaskDescription(ActivityManager.TaskDescription(moduleName))
-            } else {
-                val taskDescription = ActivityManager.TaskDescription.Builder()
-                    .setLabel(moduleName)
-                    .build()
-                setTaskDescription(taskDescription)
-            }
+            setTaskDescription(moduleName)
         }
 
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)

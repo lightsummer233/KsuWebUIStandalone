@@ -1,10 +1,13 @@
 package io.github.a13e300.ksuwebui
 
+import android.app.Activity
+import android.app.ActivityManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -30,6 +33,18 @@ fun ComponentActivity.enableEdgeToEdgeProperly() {
                 darkScrim
             )
         )
+    }
+}
+
+fun Activity.setTaskDescription(label: String) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        @Suppress("DEPRECATION")
+        setTaskDescription(ActivityManager.TaskDescription(label))
+    } else {
+        val taskDescription = ActivityManager.TaskDescription.Builder()
+            .setLabel(label)
+            .build()
+        setTaskDescription(taskDescription)
     }
 }
 

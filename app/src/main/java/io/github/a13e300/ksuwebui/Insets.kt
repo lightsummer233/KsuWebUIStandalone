@@ -51,3 +51,6 @@ data class Insets(
             append("})();")
         }
 }
+
+@Suppress("FunctionName")
+fun EmptyInsets() = Insets(0, 0, 0, 0)

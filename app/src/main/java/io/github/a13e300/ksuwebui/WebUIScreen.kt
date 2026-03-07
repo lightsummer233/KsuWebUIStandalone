@@ -34,9 +34,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 
@@ -56,17 +58,15 @@ fun WebUIScreen(
 
     val scope = rememberCoroutineScope()
 
-    val webView: CompletableDeferred<WeakReference<WebView>> = remember {
-        CompletableDeferred()
+    val webView: MutableStateFlow<WeakReference<WebView>?> = remember {
+        MutableStateFlow(null)
     }
 
     // Handle insets
 
     val isInsetsEnabled by viewModel.isInsetsEnabled.collectAsState()
-
     val safeDrawingInsets = WindowInsets.safeDrawing
-
-    val windowInsets by remember {
+    val currentWindowInsets by remember {
         derivedStateOf { if (isInsetsEnabled) WindowInsets() else safeDrawingInsets }
     }
 
@@ -81,11 +81,9 @@ fun WebUIScreen(
                 (safeDrawingInsets.getRight(density, layoutDirection) / density.density).toInt()
             Insets(top, bottom, left, right)
         }.collect { newInsets ->
-            if (WebUIViewModel.insets != newInsets) {
-                viewModel.updateInsets(newInsets)
-                webView.await().get()?.let {
-                    it.post { it.evaluateJavascript(newInsets.js, null) }
-                }
+            viewModel.updateInsets(newInsets)
+            webView.filterNotNull().first().get()?.let {
+                it.post { it.evaluateJavascript(newInsets.js, null) }
             }
         }
     }
@@ -96,7 +94,7 @@ fun WebUIScreen(
         viewModel.event.collectLatest { event ->
             when (event) {
                 is WebViewEvent.EvaluateJavascript -> {
-                    webView.await().get()?.let {
+                    webView.filterNotNull().first().get()?.let {
                         it.post { it.evaluateJavascript(event.jsCode, null) }
                     }
                 }
@@ -132,7 +130,7 @@ fun WebUIScreen(
 
     BackHandler(enabled = webCanGoBack) {
         scope.launch(Dispatchers.IO) {
-            webView.await().get()?.let {
+            webView.filterNotNull().first().get()?.let {
                 it.post { it.goBack() }
             }
         }
@@ -171,12 +169,16 @@ fun WebUIScreen(
                     }
                 }
 
-                is WebUIViewModel.Status.Ready, WebUIViewModel.Status.Updating -> {
+                WebUIViewModel.Status.Ready, WebUIViewModel.Status.Updating -> {
                     WebViewWrapper(
-                        windowInsets = windowInsets,
+                        windowInsets = currentWindowInsets,
                         factory = {
                             viewModel.initializeWebView(this, moduleId)
-                            webView.complete(WeakReference(this))
+                            webView.tryEmit(WeakReference(this))
+                        },
+                        onRelease = {
+                            viewModel.releaseWebViewState()
+                            webView.tryEmit(WeakReference(null))
                         }
                     )
                 }

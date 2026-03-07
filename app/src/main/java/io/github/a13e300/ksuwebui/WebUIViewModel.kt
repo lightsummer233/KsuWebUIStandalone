@@ -6,7 +6,6 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
-import android.view.View
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
 import android.webkit.ValueCallback
@@ -25,6 +24,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.webkit.WebViewAssetLoader
 import com.topjohnwu.superuser.nio.FileSystemManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -95,10 +95,22 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
     val moduleList: StateFlow<List<Module>>
         field = MutableStateFlow(listOf())
 
+    fun refreshModuleListWithStatus() {
+        viewModelScope.launch {
+            moduleListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
+
+            val fs = fs.get()
+            if (fs != null) {
+                refreshModuleListWithStatus(fs)
+            } else {
+                FileSystemService.start(this@WebUIViewModel)
+            }
+        }
+    }
+
     private fun refreshModuleListWithStatus(
-        fs: FileSystemManager? = this.fs.get()
+        fs: FileSystemManager
     ) {
-        fs ?: return
         viewModelScope.launch {
             moduleListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
             refreshModuleList(fs)
@@ -159,7 +171,6 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
             }
         }
         packageInfoList.emit(newPackageInfoList)
-        packageInfos = newPackageInfoList
     }
 
     private val iconCache = LruCache<String, Bitmap>(200)
@@ -208,13 +219,19 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
         super.onCleared()
     }
 
-    fun updateInsets(insets: Insets) {
-        Companion.insets = insets
-    }
+    val colorScheme: StateFlow<ColorScheme>
+        field = MutableStateFlow(lightColorScheme())
 
     fun updateColorScheme(colorScheme: ColorScheme) {
-        Companion.colorScheme = colorScheme
+        this.colorScheme.tryEmit(colorScheme)
         colorSchemeStatus.tryEmit(Status.Ready)
+    }
+
+    val insets: StateFlow<Insets>
+        field = MutableStateFlow(EmptyInsets())
+
+    fun updateInsets(insets: Insets) {
+        this.insets.tryEmit(insets)
     }
 
     val event: SharedFlow<WebViewEvent>
@@ -265,9 +282,9 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
                 "/",
                 RemoteFsPathHandler(
                     webRoot, fs.get()!!,
-                    { insets.css },
+                    { insets.value.css },
                     { enableInsets(it) },
-                    { colorScheme.css }
+                    { colorScheme.value.css }
                 )
             )
             .build()
@@ -303,7 +320,7 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                 updateWebCanGoBack(view?.canGoBack() ?: false)
                 if (isInsetsEnabled.value) {
-                    view?.evaluateJavascript(insets.js, null)
+                    view?.evaluateJavascript(insets.value.js, null)
                 }
                 super.doUpdateVisitedHistory(view, url, isReload)
             }
@@ -368,30 +385,14 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
         webView.addJavascriptInterface(webviewInterface, "ksu")
 
         val homePage = "https://mui.kernelsu.org/index.html"
-        if (webView.width > 0 && webView.height > 0) {
-            webView.loadUrl(homePage)
-        } else {
-            val listener = object : View.OnLayoutChangeListener {
-                override fun onLayoutChange(
-                    v: View, left: Int, top: Int, right: Int, bottom: Int,
-                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
-                ) {
-                    if (v.width > 0 && v.height > 0) {
-                        (v as WebView).loadUrl(homePage)
-                        v.removeOnLayoutChangeListener(this)
-                    }
-                }
-            }
-            webView.addOnLayoutChangeListener(listener)
-        }
+        webView.loadUrl(homePage)
     }
 
-    companion object {
-        var packageInfos: List<PackageInfo> = listOf()
-            private set
-        var insets: Insets = Insets(0, 0, 0, 0)
-            private set
-        var colorScheme: ColorScheme = lightColorScheme()
-            private set
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun releaseWebViewState() {
+        event.resetReplayCache()
+        enableInsets(false)
+        updateFilePathCallback(null)
+        updateWebCanGoBack(false)
     }
 }

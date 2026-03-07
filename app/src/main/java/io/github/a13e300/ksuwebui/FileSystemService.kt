@@ -32,8 +32,8 @@ class FileSystemService : RootService() {
 
         private var status: Status = Status.Uninitialized
         private val connection = object : ServiceConnection {
-            override fun onServiceConnected(p0: ComponentName, p1: IBinder) {
-                val fs = FileSystemManager.getRemote(p1)
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                val fs = FileSystemManager.getRemote(service)
                 status = Status.ServiceAvailable(fs)
                 pendingListeners.forEach { l ->
                     l.onServiceAvailable(fs)
@@ -41,7 +41,7 @@ class FileSystemService : RootService() {
                 }
             }
 
-            override fun onServiceDisconnected(p0: ComponentName) {
+            override fun onServiceDisconnected(name: ComponentName) {
                 status = Status.Uninitialized
             }
         }

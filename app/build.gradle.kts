@@ -61,6 +61,9 @@ android {
                 println("use debug signing config")
                 signingConfigs["debug"]
             }
+            packaging.resources {
+                excludes += "**"
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -85,11 +88,7 @@ android {
         buildConfig = true
     }
 
-    packaging {
-        resources {
-            excludes += "**"
-        }
-    }
+    packaging.dex.useLegacyPackaging = false
 
     lint {
         checkReleaseBuilds = false
@@ -124,6 +123,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.com.github.topjohnwu.libsu.core)

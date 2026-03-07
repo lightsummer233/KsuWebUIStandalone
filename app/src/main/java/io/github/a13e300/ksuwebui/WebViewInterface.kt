@@ -176,7 +176,7 @@ class WebViewInterfaceImpl(
 
     @JavascriptInterface
     override fun listPackages(type: String): String {
-        val packageNames = WebUIViewModel.packageInfos
+        val packageNames = viewModel.packageInfoList.value
             .filter { packageInfo ->
                 val flags = packageInfo.applicationInfo?.flags ?: 0
                 when (type.lowercase()) {
@@ -202,7 +202,7 @@ class WebViewInterfaceImpl(
 
         val pm = App.packageManager
 
-        val appMap = WebUIViewModel.packageInfos.associateBy { it.packageName }
+        val appMap = viewModel.packageInfoList.value.associateBy { it.packageName }
         for (i in 0 until packageNames.length()) {
             val packageName = packageNames.getString(i)
             val packageInfo = appMap[packageName]

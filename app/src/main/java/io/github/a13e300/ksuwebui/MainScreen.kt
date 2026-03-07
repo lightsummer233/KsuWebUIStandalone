@@ -3,8 +3,10 @@ package io.github.a13e300.ksuwebui
 import android.content.Intent
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -13,14 +15,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.plus
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -51,23 +59,35 @@ fun MainScreen() {
 
     val status by viewModel.moduleListStatus.collectAsState()
     val moduleList by viewModel.moduleList.collectAsState()
-    val moduleListIsEmpty by remember { derivedStateOf { moduleList.isEmpty() } }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(R.string.app_name)) },
+                actions = {
+                    IconButton(
+                        onClick = viewModel::refreshModuleListWithStatus
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.refresh)
+                        )
+                    }
+                },
                 windowInsets = WindowInsets.safeDrawing.only(sides = WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
                 scrollBehavior = scrollBehavior
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
+
+        val statusWithoutUpdating by remember { derivedStateOf { if (status == WebUIViewModel.Status.Updating) WebUIViewModel.Status.Ready else status } }
+
         Crossfade(
-            targetState = status
-        ) {
-            when {
-                it is WebUIViewModel.Status.Loading -> {
+            targetState = statusWithoutUpdating
+        ) { currentState ->
+            when (currentState) {
+                WebUIViewModel.Status.Loading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -79,7 +99,7 @@ fun MainScreen() {
                     }
                 }
 
-                it is WebUIViewModel.Status.Unavailable -> {
+                WebUIViewModel.Status.Unavailable -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -95,38 +115,54 @@ fun MainScreen() {
                     }
                 }
 
-                (it is WebUIViewModel.Status.Ready || it is WebUIViewModel.Status.Updating) && moduleListIsEmpty -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.no_modules),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 16.sp
-                        )
-                    }
-                }
+                WebUIViewModel.Status.Updating -> error("We should never reach here because we treat Updating as Ready in the UI")
 
-                it is WebUIViewModel.Status.Ready || it is WebUIViewModel.Status.Updating -> {
-                    LazyColumn(
-                        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-                        contentPadding = innerPadding
-                    ) {
-                        items(moduleList) { module ->
+                WebUIViewModel.Status.Ready -> {
+                    val listIsEmpty by remember { derivedStateOf { moduleList.isEmpty() } }
+
+                    Crossfade(
+                        targetState = listIsEmpty
+                    ) { isEmpty ->
+                        if (isEmpty) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp)
+                                    .fillMaxSize()
+                                    .padding(innerPadding)
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                ModuleCard(module = module, modifier = Modifier.animateItem())
+                                Text(
+                                    text = stringResource(R.string.no_modules),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+                                contentPadding = innerPadding + PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(moduleList) { module ->
+                                    ModuleCard(module = module, modifier = Modifier.animateItem())
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        val isUpdating by remember { derivedStateOf { status == WebUIViewModel.Status.Updating } }
+
+        Crossfade(
+            targetState = isUpdating,
+            modifier = Modifier.padding(innerPadding)
+        ) { isUpdating ->
+            if (isUpdating) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
