@@ -15,23 +15,23 @@ import android.webkit.WebViewClient
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.webkit.WebViewAssetLoader
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.lang.ref.WeakReference
 
 class SessionViewModel : ViewModel() {
 
-    val webViewReference: StateFlow<WeakReference<WebView>?>
-        field = MutableStateFlow<WeakReference<WebView>?>(null)
+    val webView: StateFlow<WebView?>
+        field = MutableStateFlow<WebView?>(null)
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attachWebView(
@@ -40,7 +40,7 @@ class SessionViewModel : ViewModel() {
         sharedViewModel: SharedViewModel
     ) {
         // Attach WebView
-        webViewReference.tryEmit(WeakReference(webView))
+        this.webView.tryEmit(webView)
 
         // WebView Settings
         webView.settings.javaScriptEnabled = true
@@ -170,12 +170,11 @@ class SessionViewModel : ViewModel() {
         enableInsets(false)
         updateFilePathCallback(null)
         updateWebCanGoBack(false)
-        webViewReference.tryEmit(null)
+        webView.tryEmit(null)
     }
 
     suspend fun postToWebView(block: WebView.() -> Unit) {
-        val webView = webViewReference.value?.get()
-            ?: webViewReference.mapNotNull { it?.get() }.first()
+        val webView = webView.value ?: webView.filterNotNull().first()
         webView.post { webView.block() }
     }
 
@@ -211,10 +210,36 @@ class SessionViewModel : ViewModel() {
         filePathCallback.tryEmit(callback)
     }
 
+    fun completeFilePathCallback(uris: Array<Uri>?) {
+        filePathCallback.value?.onReceiveValue(uris)
+        filePathCallback.tryEmit(null)
+    }
+
     val webCanGoBack: StateFlow<Boolean>
         field = MutableStateFlow(false)
 
     fun updateWebCanGoBack(canGoBack: Boolean) {
         webCanGoBack.tryEmit(canGoBack)
     }
+
+    sealed interface JsDialog {
+        val handled: CompletableDeferred<Unit>
+
+        data class Alert(
+            val event: WebViewEvent.ShowAlert,
+            override val handled: CompletableDeferred<Unit>
+        ) : JsDialog
+
+        data class Confirm(
+            val event: WebViewEvent.ShowConfirm,
+            override val handled: CompletableDeferred<Unit>
+        ) : JsDialog
+
+        data class Prompt(
+            val event: WebViewEvent.ShowPrompt,
+            override val handled: CompletableDeferred<Unit>
+        ) : JsDialog
+    }
+
+    override fun onCleared(): Unit = detachWebView()
 }
