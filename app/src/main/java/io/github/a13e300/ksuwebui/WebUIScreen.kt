@@ -12,10 +12,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,16 +74,19 @@ fun WebUIScreen(
 
     val isInsetsEnabled by sessionViewModel.isInsetsEnabled.collectAsState()
     val safeDrawingInsets = WindowInsets.safeDrawing
+    val systemBarsInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+    val imeInsets = WindowInsets.ime
+    val currentWindowInsets by remember {
+        derivedStateOf { if (isInsetsEnabled) imeInsets else safeDrawingInsets }
+    }
 
-    LaunchedEffect(density, layoutDirection, safeDrawingInsets, isInsetsEnabled) {
+    LaunchedEffect(density, layoutDirection, systemBarsInsets, isInsetsEnabled) {
         if (!isInsetsEnabled) return@LaunchedEffect
         snapshotFlow {
-            val top = (safeDrawingInsets.getTop(density) / density.density).toInt()
-            val bottom = (safeDrawingInsets.getBottom(density) / density.density).toInt()
-            val left =
-                (safeDrawingInsets.getLeft(density, layoutDirection) / density.density).toInt()
-            val right =
-                (safeDrawingInsets.getRight(density, layoutDirection) / density.density).toInt()
+            val top = (systemBarsInsets.getTop(density) / density.density).toInt()
+            val bottom = (systemBarsInsets.getBottom(density) / density.density).toInt()
+            val left = (systemBarsInsets.getLeft(density, layoutDirection) / density.density).toInt()
+            val right = (systemBarsInsets.getRight(density, layoutDirection) / density.density).toInt()
             Insets(top, bottom, left, right)
         }.collect { newInsets ->
             sessionViewModel.updateInsets(newInsets)
@@ -149,6 +157,7 @@ fun WebUIScreen(
 
                 SharedViewModel.Status.Ready, SharedViewModel.Status.Updating -> {
                     WebViewWrapper(
+                        windowInsets = currentWindowInsets,
                         factory = {
                             sessionViewModel.attachWebView(
                                 webView = this,
