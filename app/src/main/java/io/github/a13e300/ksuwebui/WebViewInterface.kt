@@ -52,7 +52,8 @@ interface WebViewInterface {
 
 @Stable
 class WebViewInterfaceImpl(
-    private val viewModel: WebUIViewModel
+    private val sharedViewModel: SharedViewModel,
+    private val sessionViewModel: SessionViewModel
 ) : WebViewInterface {
 
     @JavascriptInterface
@@ -82,7 +83,7 @@ class WebViewInterfaceImpl(
                 JSONObject.quote(stderr)
             }); } catch(e) { console.error(e); } })();"
 
-        viewModel.sendEvent(WebViewEvent.EvaluateJavascript(jsCode))
+        sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(jsCode))
     }
 
     @JavascriptInterface
@@ -114,7 +115,7 @@ class WebViewInterfaceImpl(
             val jsCode =
                 "(function() { try { ${callbackFunc}.${name}.emit('data', ${JSONObject.quote(data)}); } catch(e) { console.error('emitData', e); } })();"
 
-            viewModel.sendEvent(WebViewEvent.EvaluateJavascript(jsCode))
+            sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(jsCode))
         }
 
         val stdout = object : CallbackList<String>(UiThreadHandler::runAndWait) {
@@ -138,7 +139,7 @@ class WebViewInterfaceImpl(
             val emitExitCode =
                 $$"(function() { try { $${callbackFunc}.emit('exit', $${result.code}); } catch(e) { console.error(`emitExit error: ${e}`); } })();"
 
-            viewModel.sendEvent(WebViewEvent.EvaluateJavascript(emitExitCode))
+            sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(emitExitCode))
 
             if (result.code != 0) {
                 val emitErrCode =
@@ -146,7 +147,7 @@ class WebViewInterfaceImpl(
                         JSONObject.quote(result.err.joinToString("\n"))
                     };${callbackFunc}.emit('error', err); } catch(e) { console.error('emitErr', e); } })();"
 
-                viewModel.sendEvent(WebViewEvent.EvaluateJavascript(emitErrCode))
+                sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(emitErrCode))
             }
         }.whenComplete { _, _ ->
             val _ = runCatching { shell.close() }
@@ -155,17 +156,17 @@ class WebViewInterfaceImpl(
 
     @JavascriptInterface
     override fun toast(msg: String) {
-        viewModel.sendEvent(WebViewEvent.Toast(msg))
+        sessionViewModel.sendWebViewEvent(WebViewEvent.Toast(msg))
     }
 
     @JavascriptInterface
     override fun fullScreen(enable: Boolean) {
-        viewModel.sendEvent(WebViewEvent.FullScreen(enable))
+        sessionViewModel.sendWebViewEvent(WebViewEvent.FullScreen(enable))
     }
 
     @JavascriptInterface
     override fun enableEdgeToEdge(enable: Boolean) {
-        viewModel.sendEvent(WebViewEvent.EdgeToEdge(enable))
+        sessionViewModel.sendWebViewEvent(WebViewEvent.EdgeToEdge(enable))
     }
 
     @JavascriptInterface
@@ -176,7 +177,7 @@ class WebViewInterfaceImpl(
 
     @JavascriptInterface
     override fun listPackages(type: String): String {
-        val packageNames = viewModel.packageInfoList.value
+        val packageNames = sharedViewModel.packageInfoList.value
             .filter { packageInfo ->
                 val flags = packageInfo.applicationInfo?.flags ?: 0
                 when (type.lowercase()) {
@@ -202,7 +203,7 @@ class WebViewInterfaceImpl(
 
         val pm = App.packageManager
 
-        val appMap = viewModel.packageInfoList.value.associateBy { it.packageName }
+        val appMap = sharedViewModel.packageInfoList.value.associateBy { it.packageName }
         for (i in 0 until packageNames.length()) {
             val packageName = packageNames.getString(i)
             val packageInfo = appMap[packageName]
@@ -229,7 +230,7 @@ class WebViewInterfaceImpl(
 
     @JavascriptInterface
     override fun exit() {
-        viewModel.sendEvent(WebViewEvent.Exit)
+        sessionViewModel.sendWebViewEvent(WebViewEvent.Exit)
     }
 
     inline fun <T> withNewRootShell(

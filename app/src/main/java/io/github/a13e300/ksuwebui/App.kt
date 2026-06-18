@@ -34,7 +34,7 @@ class App : Application(), ViewModelStoreOwner {
         )
 
         val viewModelProvider = ViewModelProvider(this)
-        val viewModel = viewModelProvider[WebUIViewModel::class]
+        val viewModel = viewModelProvider[SharedViewModel::class]
 
         viewModel.initialize()
     }

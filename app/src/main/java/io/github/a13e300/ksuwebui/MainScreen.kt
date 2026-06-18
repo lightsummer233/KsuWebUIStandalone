@@ -53,7 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainScreen() {
-    val viewModel: WebUIViewModel = viewModel(viewModelStoreOwner = App.instance)
+    val viewModel: SharedViewModel = viewModel(viewModelStoreOwner = App.instance)
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -81,13 +81,13 @@ fun MainScreen() {
         contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
 
-        val statusWithoutUpdating by remember { derivedStateOf { if (status == WebUIViewModel.Status.Updating) WebUIViewModel.Status.Ready else status } }
+        val statusWithoutUpdating by remember { derivedStateOf { if (status == SharedViewModel.Status.Updating) SharedViewModel.Status.Ready else status } }
 
         Crossfade(
             targetState = statusWithoutUpdating
         ) { currentState ->
             when (currentState) {
-                WebUIViewModel.Status.Loading -> {
+                SharedViewModel.Status.Loading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -99,7 +99,7 @@ fun MainScreen() {
                     }
                 }
 
-                WebUIViewModel.Status.Unavailable -> {
+                SharedViewModel.Status.Unavailable -> {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -115,9 +115,9 @@ fun MainScreen() {
                     }
                 }
 
-                WebUIViewModel.Status.Updating -> error("We should never reach here because we treat Updating as Ready in the UI")
+                SharedViewModel.Status.Updating -> error("We should never reach here because we treat Updating as Ready in the UI")
 
-                WebUIViewModel.Status.Ready -> {
+                SharedViewModel.Status.Ready -> {
                     val listIsEmpty by remember { derivedStateOf { moduleList.isEmpty() } }
 
                     Crossfade(
@@ -153,7 +153,7 @@ fun MainScreen() {
             }
         }
 
-        val isUpdating by remember { derivedStateOf { status == WebUIViewModel.Status.Updating } }
+        val isUpdating by remember { derivedStateOf { status == SharedViewModel.Status.Updating } }
 
         Crossfade(
             targetState = isUpdating,
@@ -170,7 +170,7 @@ fun MainScreen() {
 
 @Composable
 fun ModuleCard(
-    module: WebUIViewModel.Module,
+    module: SharedViewModel.Module,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -223,7 +223,7 @@ fun ModuleCard(
 @Composable
 private fun ModuleCardPreview() {
     ModuleCard(
-        module = WebUIViewModel.Module(
+        module = SharedViewModel.Module(
             name = "Example Module",
             id = "example_module",
             desc = "This is an example module used for previewing the ModuleCard composable in Jetpack Compose. It demonstrates how the module information will be displayed in the UI.",

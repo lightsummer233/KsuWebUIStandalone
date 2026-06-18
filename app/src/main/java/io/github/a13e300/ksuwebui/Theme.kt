@@ -18,7 +18,7 @@ fun KsuWebUITheme(
     dynamicColor: Boolean = true,
     content: @Composable (() -> Unit)
 ) {
-    val viewModel: WebUIViewModel = viewModel(viewModelStoreOwner = App.instance)
+    val viewModel: SharedViewModel = viewModel(viewModelStoreOwner = App.instance)
 
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {

@@ -1,19 +1,9 @@
 package io.github.a13e300.ksuwebui
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.net.Uri
-import android.webkit.JsPromptResult
-import android.webkit.JsResult
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.collection.LruCache
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -21,13 +11,9 @@ import androidx.compose.runtime.Immutable
 import androidx.core.graphics.scale
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.webkit.WebViewAssetLoader
 import com.topjohnwu.superuser.nio.FileSystemManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -35,12 +21,9 @@ import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.File
 import java.lang.ref.WeakReference
 
-class WebUIViewModel : ViewModel(), FileSystemService.Listener {
+class SharedViewModel : ViewModel(), FileSystemService.Listener {
 
     sealed interface Status {
         data object Loading : Status
@@ -78,7 +61,7 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
 
     fun initialize() {
         viewModelScope.launch {
-            FileSystemService.start(this@WebUIViewModel)
+            FileSystemService.start(this@SharedViewModel)
             refreshPackageInfoList()
         }
     }
@@ -103,7 +86,7 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
             if (fs != null) {
                 refreshModuleListWithStatus(fs)
             } else {
-                FileSystemService.start(this@WebUIViewModel)
+                FileSystemService.start(this@SharedViewModel)
             }
         }
     }
@@ -175,7 +158,7 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
 
     private val iconCache = LruCache<String, Bitmap>(200)
 
-    private fun loadAppIcon(
+    fun loadAppIcon(
         packageManager: PackageManager,
         packageName: String,
         sizePx: Int
@@ -224,174 +207,5 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
     fun updateColorScheme(colorScheme: ColorScheme) {
         this.colorScheme.tryEmit(colorScheme)
         colorSchemeStatus.tryEmit(Status.Ready)
-    }
-
-    val insets: StateFlow<Insets>
-        field = MutableStateFlow(EmptyInsets())
-
-    fun updateInsets(insets: Insets) {
-        this.insets.tryEmit(insets)
-    }
-
-    val event: SharedFlow<WebViewEvent>
-        field = MutableSharedFlow<WebViewEvent>(extraBufferCapacity = 64)
-
-    fun sendEvent(e: WebViewEvent) {
-        viewModelScope.launch {
-            event.emit(e)
-        }
-    }
-
-    val isInsetsEnabled: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-
-    fun enableInsets(enabled: Boolean) {
-        isInsetsEnabled.tryEmit(enabled)
-    }
-
-    val filePathCallback: StateFlow<ValueCallback<Array<Uri>>?>
-        field = MutableStateFlow<ValueCallback<Array<Uri>>?>(null)
-
-    fun updateFilePathCallback(callback: ValueCallback<Array<Uri>>?) {
-        filePathCallback.value?.onReceiveValue(null)
-        filePathCallback.tryEmit(callback)
-    }
-
-    val webCanGoBack: StateFlow<Boolean>
-        field = MutableStateFlow(false)
-
-    fun updateWebCanGoBack(canGoBack: Boolean) {
-        webCanGoBack.tryEmit(canGoBack)
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    fun initializeWebView(webView: WebView, moduleId: String) {
-
-        // WebView Settings
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.settings.allowFileAccess = false
-
-        // Asset Loader
-        val moduleDir = "/data/adb/modules/$moduleId"
-        val webRoot = File("$moduleDir/webroot")
-        val webViewAssetLoader = WebViewAssetLoader.Builder()
-            .setDomain("mui.kernelsu.org")
-            .addPathHandler(
-                "/",
-                RemoteFsPathHandler(
-                    webRoot, fs.get()!!,
-                    { insets.value.css },
-                    { enableInsets(it) },
-                    { colorScheme.value.css }
-                )
-            )
-            .build()
-
-        // WebViewClient
-        webView.webViewClient = object : WebViewClient() {
-
-            override fun shouldInterceptRequest(
-                view: WebView,
-                request: WebResourceRequest
-            ): WebResourceResponse? {
-                val url = request.url
-                if (url.scheme.equals("ksu", ignoreCase = true)
-                    && url.host.equals("icon", ignoreCase = true)
-                ) {
-                    val packageName = url.path?.substring(1)
-                    if (!packageName.isNullOrEmpty()) {
-                        val icon = loadAppIcon(App.packageManager, packageName, 512)
-                        if (icon != null) {
-                            val stream = ByteArrayOutputStream()
-                            icon.compress(Bitmap.CompressFormat.PNG, 100, stream)
-                            return WebResourceResponse(
-                                "image/png",
-                                null,
-                                ByteArrayInputStream(stream.toByteArray())
-                            )
-                        }
-                    }
-                }
-                return webViewAssetLoader.shouldInterceptRequest(url)
-            }
-
-            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
-                updateWebCanGoBack(view?.canGoBack() ?: false)
-                if (isInsetsEnabled.value) {
-                    view?.evaluateJavascript(insets.value.js, null)
-                }
-                super.doUpdateVisitedHistory(view, url, isReload)
-            }
-        }
-
-        // WebChromeClient
-        webView.webChromeClient = object : WebChromeClient() {
-
-            override fun onJsAlert(
-                view: WebView?,
-                url: String?,
-                message: String?,
-                result: JsResult?
-            ): Boolean {
-                if (message == null || result == null) return false
-                sendEvent(WebViewEvent.ShowAlert(message, result))
-                return true
-            }
-
-            override fun onJsConfirm(
-                view: WebView?,
-                url: String?,
-                message: String?,
-                result: JsResult?
-            ): Boolean {
-                if (message == null || result == null) return false
-                sendEvent(WebViewEvent.ShowConfirm(message, result))
-                return true
-            }
-
-            override fun onJsPrompt(
-                view: WebView?,
-                url: String?,
-                message: String?,
-                defaultValue: String?,
-                result: JsPromptResult?
-            ): Boolean {
-                if (message == null || result == null || defaultValue == null) return false
-                sendEvent(WebViewEvent.ShowPrompt(message, defaultValue, result))
-                return true
-            }
-
-            override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                updateFilePathCallback(filePathCallback)
-
-                val intent = fileChooserParams?.createIntent()
-                    ?: Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }
-                if (fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
-                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                }
-                sendEvent(WebViewEvent.ShowFileChooser(intent))
-                return true
-            }
-        }
-
-        // JS Interface
-        val webviewInterface = WebViewInterfaceImpl(this)
-        webView.addJavascriptInterface(webviewInterface, "ksu")
-
-        val homePage = "https://mui.kernelsu.org/index.html"
-        webView.loadUrl(homePage)
-    }
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    fun releaseWebViewState() {
-        event.resetReplayCache()
-        enableInsets(false)
-        updateFilePathCallback(null)
-        updateWebCanGoBack(false)
     }
 }
