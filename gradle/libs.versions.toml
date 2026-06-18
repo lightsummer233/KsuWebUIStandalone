@@ -1,14 +1,16 @@
 [versions]
-agp = "9.1.0"
-kotlin = "2.3.10"
-core = "1.17.0"
-activity = "1.12.4"
-lifecycle = "2.10.0"
-webkit = "1.15.0"
-compose-bom = "2026.02.01"
+agp = "9.2.1"
+kotlin = "2.4.0"
+core = "1.19.0"
+activity = "1.13.0"
+lifecycle = "2.11.0"
+webkit = "1.16.0"
+compose-bom = "2026.06.00"
 libsu = "6.0.0"
 
 [libraries]
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version = "2.1.5" }
+
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

@@ -1,7 +1,6 @@
 package io.github.a13e300.ksuwebui
 
 import android.os.Bundle
-import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 
@@ -20,14 +19,6 @@ class WebUIActivity : ComponentActivity() {
         if (moduleName.isNotEmpty()) {
             setTaskDescription(moduleName)
         }
-
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        WebView.setWebContentsDebuggingEnabled(
-            prefs.getBoolean(
-                "enable_web_debugging",
-                BuildConfig.DEBUG
-            )
-        )
 
         setContent {
             KsuWebUITheme {

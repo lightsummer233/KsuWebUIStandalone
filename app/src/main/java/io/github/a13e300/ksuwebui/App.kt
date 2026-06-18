@@ -3,6 +3,7 @@ package io.github.a13e300.ksuwebui
 import android.app.Application
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.webkit.WebView
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -27,6 +28,10 @@ class App : Application(), ViewModelStoreOwner {
 
         Shell.setDefaultBuilder(Shell.Builder.create().setFlags(Shell.FLAG_MOUNT_MASTER))
         Shell.enableVerboseLogging = BuildConfig.DEBUG
+
+        WebView.setWebContentsDebuggingEnabled(
+            prefs.getBoolean("enable_web_debugging", BuildConfig.DEBUG)
+        )
 
         val viewModelProvider = ViewModelProvider(this)
         val viewModel = viewModelProvider[WebUIViewModel::class]

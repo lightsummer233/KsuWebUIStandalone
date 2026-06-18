@@ -26,7 +26,7 @@ val gitCommitCount = "git rev-list HEAD --count".execute().toInt()
 
 android {
     namespace = "io.github.a13e300.ksuwebui"
-    compileSdk = 36
+    compileSdk = 37
 
     signingConfigs {
         if (keystoreProperties != null) {
@@ -41,8 +41,8 @@ android {
 
     defaultConfig {
         applicationId = "io.github.a13e300.ksuwebui"
-        minSdk = 26
-        targetSdk = 36
+        minSdk = 24
+        targetSdk = 37
         versionCode = gitCommitCount
         versionName = "1.0"
         base.archivesName = "KsuWebUI-$versionName-$versionCode"
@@ -104,13 +104,14 @@ kotlin {
     jvmToolchain(21)
     compilerOptions {
         freeCompilerArgs.addAll(
-            "-Xexplicit-backing-fields",
             "-Xreturn-value-checker=full"
         )
     }
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

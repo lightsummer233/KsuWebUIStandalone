@@ -216,7 +216,6 @@ class WebUIViewModel : ViewModel(), FileSystemService.Listener {
 
     override fun onCleared() {
         FileSystemService.removeListener(this)
-        super.onCleared()
     }
 
     val colorScheme: StateFlow<ColorScheme>
