@@ -5,13 +5,15 @@ import android.text.TextUtils
 import android.webkit.JavascriptInterface
 import androidx.compose.runtime.Stable
 import androidx.core.content.pm.PackageInfoCompat
+import androidx.lifecycle.viewModelScope
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ShellUtils
 import com.topjohnwu.superuser.internal.UiThreadHandler
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.CompletableFuture
 
 @Stable
 interface WebViewInterface {
@@ -53,7 +55,8 @@ interface WebViewInterface {
 @Stable
 class WebViewInterfaceImpl(
     private val sharedViewModel: SharedViewModel,
-    private val sessionViewModel: SessionViewModel
+    private val sessionViewModel: SessionViewModel,
+    private val moduleId: String
 ) : WebViewInterface {
 
     @JavascriptInterface
@@ -131,26 +134,27 @@ class WebViewInterfaceImpl(
         }
 
         val future = shell.newJob().add(finalCommand.toString()).to(stdout, stderr).enqueue()
-        val completableFuture = CompletableFuture.supplyAsync {
-            future.get()
-        }
 
-        completableFuture.thenAccept { result ->
-            val emitExitCode =
-                $$"(function() { try { $${callbackFunc}.emit('exit', $${result.code}); } catch(e) { console.error(`emitExit error: ${e}`); } })();"
+        sessionViewModel.viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = future.get()
 
-            sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(emitExitCode))
+                val emitExitCode =
+                    $$"(function() { try { $${callbackFunc}.emit('exit', $${result.code}); } catch(e) { console.error(`emitExit error: ${e}`); } })();"
 
-            if (result.code != 0) {
-                val emitErrCode =
-                    "(function() { try { var err = new Error(); err.exitCode = ${result.code}; err.message = ${
-                        JSONObject.quote(result.err.joinToString("\n"))
-                    };${callbackFunc}.emit('error', err); } catch(e) { console.error('emitErr', e); } })();"
+                sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(emitExitCode))
 
-                sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(emitErrCode))
+                if (result.code != 0) {
+                    val emitErrCode =
+                        "(function() { try { var err = new Error(); err.exitCode = ${result.code}; err.message = ${
+                            JSONObject.quote(result.err.joinToString("\n"))
+                        };${callbackFunc}.emit('error', err); } catch(e) { console.error('emitErr', e); } })();"
+
+                    sessionViewModel.sendWebViewEvent(WebViewEvent.EvaluateJavascript(emitErrCode))
+                }
+            } finally {
+                val _ = runCatching { shell.close() }
             }
-        }.whenComplete { _, _ ->
-            val _ = runCatching { shell.close() }
         }
     }
 
@@ -171,8 +175,18 @@ class WebViewInterfaceImpl(
 
     @JavascriptInterface
     override fun moduleInfo(): String {
-        // TODO
-        return ""
+        val currentModuleInfo = JSONObject()
+        currentModuleInfo.put("moduleDir", "/data/adb/modules/$moduleId")
+
+        sharedViewModel.moduleList.value.firstOrNull { it.id == moduleId }?.let { module ->
+            currentModuleInfo.put("id", module.id)
+            currentModuleInfo.put("name", module.name)
+            currentModuleInfo.put("author", module.author)
+            currentModuleInfo.put("version", module.version)
+            currentModuleInfo.put("description", module.desc)
+        }
+
+        return currentModuleInfo.toString()
     }
 
     @JavascriptInterface

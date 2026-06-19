@@ -17,13 +17,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.lang.ref.WeakReference
 
-class SharedViewModel : ViewModel(), FileSystemService.Listener {
+class SharedViewModel : ViewModel() {
 
     sealed interface Status {
         data object Loading : Status
@@ -38,11 +39,20 @@ class SharedViewModel : ViewModel(), FileSystemService.Listener {
     val packageInfoListStatus: StateFlow<Status>
         field = MutableStateFlow<Status>(Status.Loading)
 
-    val fsStatus: StateFlow<Status>
-        field = MutableStateFlow<Status>(Status.Loading)
-
     val colorSchemeStatus: StateFlow<Status>
         field = MutableStateFlow<Status>(Status.Loading)
+
+    private val connector = FileSystemConnector(App.instance)
+
+    val fsState: StateFlow<FileSystemConnector.State> = connector.state
+
+    val fsStatus: StateFlow<Status> = connector.state.map {
+        when (it) {
+            FileSystemConnector.State.Connecting -> Status.Loading
+            FileSystemConnector.State.Unavailable -> Status.Unavailable
+            is FileSystemConnector.State.Available -> Status.Ready
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Status.Loading)
 
     val status: StateFlow<Status> = combine(
         moduleListStatus,
@@ -60,9 +70,16 @@ class SharedViewModel : ViewModel(), FileSystemService.Listener {
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Status.Loading)
 
     fun initialize() {
+        viewModelScope.launch { refreshPackageInfoList() }
+
+        viewModelScope.launch { connector.connect() }
+
         viewModelScope.launch {
-            FileSystemService.start(this@SharedViewModel)
-            refreshPackageInfoList()
+            connector.state.filterIsInstance<FileSystemConnector.State.Available>().collect { available ->
+                moduleListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
+                refreshModuleList(available.fs)
+                moduleListStatus.emit(Status.Ready)
+            }
         }
     }
 
@@ -82,29 +99,19 @@ class SharedViewModel : ViewModel(), FileSystemService.Listener {
         viewModelScope.launch {
             moduleListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
 
-            val fs = fs.get()
-            if (fs != null) {
-                refreshModuleListWithStatus(fs)
-            } else {
-                FileSystemService.start(this@SharedViewModel)
+            val state = connector.state.value
+            if (state is FileSystemConnector.State.Available) {
+                refreshModuleList(state.fs)
+                moduleListStatus.emit(Status.Ready)
             }
-        }
-    }
-
-    private fun refreshModuleListWithStatus(
-        fs: FileSystemManager
-    ) {
-        viewModelScope.launch {
-            moduleListStatus.getAndUpdate { if (it is Status.Ready) Status.Updating else it }
-            refreshModuleList(fs)
-            moduleListStatus.emit(Status.Ready)
         }
     }
 
     private suspend fun refreshModuleList(fs: FileSystemManager) = withContext(Dispatchers.IO) {
         val newModuleList = mutableListOf<Module>()
         val showDisabled = App.prefs.getBoolean("show_disabled", false)
-        fs.getFile("/data/adb/modules").listFiles()!!.forEach { f ->
+        val files = fs.getFile("/data/adb/modules").listFiles() ?: return@withContext
+        files.forEach { f ->
             if (!f.isDirectory) return@forEach
             if (!fs.getFile(f, "webroot").isDirectory) return@forEach
             if (fs.getFile(f, "disable").exists() && !showDisabled) return@forEach
@@ -163,7 +170,8 @@ class SharedViewModel : ViewModel(), FileSystemService.Listener {
         packageName: String,
         sizePx: Int
     ): Bitmap? {
-        val cachedIcon = iconCache[packageName]
+        val cacheKey = "$packageName:$sizePx"
+        val cachedIcon = iconCache[cacheKey]
         if (cachedIcon != null) return cachedIcon
 
         try {
@@ -173,32 +181,11 @@ class SharedViewModel : ViewModel(), FileSystemService.Listener {
                 ?: return null
             val raw = drawable.toBitmap(sizePx)
             val icon = raw.scale(sizePx, sizePx)
-            iconCache.put(packageName, icon)
+            iconCache.put(cacheKey, icon)
             return icon
         } catch (_: Exception) {
             return null
         }
-    }
-
-    var fs: WeakReference<FileSystemManager> = WeakReference(null)
-
-    override fun onServiceAvailable(fs: FileSystemManager) {
-        this.fs = WeakReference(fs)
-        viewModelScope.launch {
-            fsStatus.emit(Status.Ready)
-            refreshModuleListWithStatus(fs)
-        }
-    }
-
-    override fun onLaunchFailed() {
-        viewModelScope.launch {
-            fsStatus.emit(Status.Unavailable)
-            moduleListStatus.emit(Status.Unavailable)
-        }
-    }
-
-    override fun onCleared() {
-        FileSystemService.removeListener(this)
     }
 
     val colorScheme: StateFlow<ColorScheme>
@@ -207,5 +194,9 @@ class SharedViewModel : ViewModel(), FileSystemService.Listener {
     fun updateColorScheme(colorScheme: ColorScheme) {
         this.colorScheme.tryEmit(colorScheme)
         colorSchemeStatus.tryEmit(Status.Ready)
+    }
+
+    override fun onCleared() {
+        connector.disconnect()
     }
 }

@@ -127,9 +127,9 @@ fun Drawable.toBitmap(size: Int): Bitmap {
 
 fun Window.hideSystemUI() {
     WindowInsetsControllerCompat(this, decorView).let { controller ->
-        controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 }
 

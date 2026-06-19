@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
@@ -101,7 +100,7 @@ fun WebUIScreen(
     val webCanGoBack by sessionViewModel.webCanGoBack.collectAsState()
 
     BackHandler(enabled = webCanGoBack) {
-        scope.launch(Dispatchers.IO) {
+        scope.launch {
             sessionViewModel.postToWebView {
                 goBack()
             }

@@ -50,13 +50,17 @@ class SessionViewModel : ViewModel() {
         // Asset Loader
         val moduleDir = "/data/adb/modules/$moduleId"
         val webRoot = File("$moduleDir/webroot")
+        val fsState = sharedViewModel.fsState.value
+        check(fsState is FileSystemConnector.State.Available) {
+            "attachWebView called before FileSystemManager is available"
+        }
         val webViewAssetLoader = WebViewAssetLoader.Builder()
             .setDomain("mui.kernelsu.org")
             .addPathHandler(
                 "/",
                 RemoteFsPathHandler(
                     webRoot,
-                    sharedViewModel.fs.get()!!,
+                    fsState.fs,
                     { insets.value.css },
                     { enableInsets(it) },
                     { sharedViewModel.colorScheme.value.css }
@@ -158,7 +162,8 @@ class SessionViewModel : ViewModel() {
         // JS Interface
         val webviewInterface = WebViewInterfaceImpl(
             sharedViewModel = sharedViewModel,
-            sessionViewModel = this
+            sessionViewModel = this,
+            moduleId = moduleId
         )
         webView.addJavascriptInterface(webviewInterface, "ksu")
 
