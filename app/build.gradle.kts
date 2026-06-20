@@ -27,6 +27,8 @@ val gitCommitCount = "git rev-list HEAD --count".execute().toInt()
 android {
     namespace = "io.github.a13e300.ksuwebui"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
+    ndkVersion = "29.0.14206865"
 
     signingConfigs {
         if (keystoreProperties != null) {
@@ -80,8 +82,9 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_25
+        targetCompatibility = JavaVersion.VERSION_25
     }
 
     buildFeatures {
@@ -101,9 +104,10 @@ tasks.withType<PackageAndroidArtifact> {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     compilerOptions {
         freeCompilerArgs.addAll(
+            "-Xexplicit-backing-fields",
             "-Xreturn-value-checker=full"
         )
     }
